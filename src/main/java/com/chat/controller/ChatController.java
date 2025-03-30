@@ -3,6 +3,7 @@ package com.chat.controller;
 import com.chat.model.ChatMessage;
 import com.chat.model.ChatModelCreation;
 import com.chat.model.UserModel;
+import com.chat.repo.ChatMessageRepo;
 import com.chat.repo.ChatRepository;
 import com.chat.service.ChatService;
 import jakarta.servlet.http.HttpSession;
@@ -20,9 +21,12 @@ import java.util.List;
 @CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true") // ✅ Apply at class level
 public class ChatController {
     private final ChatService chatService;
+    private final ChatMessageRepo chatMessageRepo;
+
     @Autowired
-    public ChatController(ChatService chatService, ChatRepository chatRepository) {
+    public ChatController(ChatService chatService, ChatRepository chatRepository, ChatMessageRepo chatMessageRepo) {
         this.chatService = chatService;
+        this.chatMessageRepo = chatMessageRepo;
     }
 
     @PostMapping("/create")
@@ -50,9 +54,10 @@ public class ChatController {
     }
 
     @DeleteMapping("/delete")
-    public ResponseEntity<?> deleteChat(@RequestParam("chatId") Long chatId) {
-        if (chatId == null) {
-            return ResponseEntity.status(401).body("You are not logged in.");
+    public ResponseEntity<?> deleteChat(@RequestParam("chatId") Long chatId, HttpSession session) {
+        UserModel user = (UserModel) session.getAttribute("owner");
+        if (user == null || user.getId() == null) {
+            return ResponseEntity.status(403).body(Map.of("message", "You are not authorized to delete this chat."));
         }
         boolean deleted = chatService.deleteChatById(chatId);
         if (deleted) {
@@ -62,10 +67,19 @@ public class ChatController {
         }
     }
 
+
+
     @MessageMapping("/chat/{chatId}/send")
     @SendTo("/topic/chat/{chatId}")
     public ChatMessage sendMessage(ChatMessage message) {
+        chatMessageRepo.save(new ChatMessage(message.getChatId(), message.getSender(), message.getContent()));
         return message;
+    }
+
+    // Example REST endpoint in ChatMessageController.java:
+    @GetMapping("/{chatId}")
+    public List<ChatMessage> getChatMessages(@PathVariable Long chatId) {
+        return chatMessageRepo.findByChatId(chatId);
     }
 
 }

@@ -5,6 +5,7 @@ import com.chat.model.UserModel;
 import com.chat.repo.ChatRepository;
 import com.chat.repo.UserRepo;
 import jakarta.servlet.http.HttpSession;
+import jakarta.transaction.Transactional;
 import org.apache.catalina.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -43,7 +44,8 @@ public class ChatService {
         return chatRepository.save(chatModelCreation);
     }
 
-    public boolean deleteChatById(Long chatId){
+    @Transactional
+    public boolean deleteChatById(Long chatId) {
         UserModel owner = (UserModel) session.getAttribute("owner");
         Long ownerId = owner.getId();
         if (ownerId == null) {
@@ -51,12 +53,18 @@ public class ChatService {
         }
 
         Optional<ChatModelCreation> chatOpt = chatRepository.findByChatId(chatId);
-        if(chatOpt.isPresent()){
+        if (chatOpt.isPresent()) {
+            ChatModelCreation chat = chatOpt.get();
+            // Check if the chat belongs to the owner
+            if (!chat.getOwnerId().equals(ownerId)) {
+                throw new RuntimeException("You do not have permission to delete this chat");
+            }
             chatRepository.deleteByChatId(chatId);
             return true;
         }
         return false;
     }
+
 
     public List<ChatModelCreation> getChatsByOwnerId() {
         UserModel owner = (UserModel) session.getAttribute("owner");
