@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface ChatMessageRepo extends MongoRepository<ChatMessage, String> {
     List<ChatMessage> findByChatId(Long chatId);
+
+    List<ChatMessage> findByChatIdOrderByTimestampAsc(Long chatId);
 }
