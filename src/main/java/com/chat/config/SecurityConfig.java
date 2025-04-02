@@ -4,8 +4,6 @@ import com.chat.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-// Remove HttpMethod import if no longer needed after removing /files/** GET rule
-// import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
@@ -19,9 +17,6 @@ import org.springframework.security.web.authentication.logout.HttpStatusReturnin
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-// Remove SimpMessageType import if not directly used in http security rules
-// import org.springframework.messaging.simp.SimpMessageType;
-import static org.springframework.security.config.Customizer.withDefaults;
 
 import java.util.Arrays;
 import java.util.List;

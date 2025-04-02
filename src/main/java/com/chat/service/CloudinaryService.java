@@ -11,7 +11,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.UUID; // For generating public IDs if needed
+// import java.util.UUID; // Keep if you plan to use custom public IDs
 
 @Service
 public class CloudinaryService {
@@ -21,38 +21,65 @@ public class CloudinaryService {
     @Autowired
     private Cloudinary cloudinary;
 
+    /**
+     * Uploads a file to Cloudinary.
+     *
+     * @param file The file to upload.
+     * @param originalFilename The original name of the file (used for metadata and potentially display).
+     * @return A map containing upload details like secure_url, public_id, resource_type, bytes, and original_filename.
+     * @throws IOException If reading file bytes fails.
+     * @throws RuntimeException If the Cloudinary upload itself fails.
+     */
     public Map<String, Object> uploadFile(MultipartFile file, String originalFilename) throws IOException {
         log.info("Attempting to upload file '{}' to Cloudinary.", originalFilename);
 
-        // Generate a unique public ID (optional, Cloudinary generates one if not provided)
-        // String publicId = "chat_files/" + UUID.randomUUID().toString();
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("File to upload cannot be null or empty.");
+        }
+        if (originalFilename == null || originalFilename.isBlank()) {
+            log.warn("Original filename is missing, using default 'upload'.");
+            originalFilename = "upload"; // Provide a default if missing
+        }
 
         try {
             // Upload options:
             // resource_type: "auto" -> Let Cloudinary detect image, video, raw
-            // folder: "chat_uploads" -> Organize uploads in Cloudinary (optional)
+            // original_filename: Stores the original filename as metadata in Cloudinary
+            // use_filename: true -> Tells Cloudinary to try and use the original filename for the public_id (it will ensure uniqueness)
+            // unique_filename: false -> Works with use_filename, prevents Cloudinary from adding random characters if filename is unique enough
+            // folder: "chat_uploads" -> Organize uploads in Cloudinary (optional but recommended)
             Map<?, ?> uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
                     "resource_type", "auto",
-                    "original_filename", originalFilename // Store original filename metadata
-                    // "public_id", publicId // Use generated public ID if desired
-                    // "folder", "chat_uploads" // Optional folder
+                    "original_filename", originalFilename, // Store original filename metadata
+                    "use_filename", true,          // Attempt to use original filename for public ID
+                    "unique_filename", false,       // Don't add random chars if use_filename works
+                    "folder", "chat_uploads"      // Optional: Organize in a folder
+                    // "overwrite", true             // Optional: Overwrite if file with same public_id exists
             ));
 
             // Extract useful information from the result
             String secureUrl = (String) uploadResult.get("secure_url"); // HTTPS URL (recommended)
             String publicIdResult = (String) uploadResult.get("public_id");
-            String resourceType = (String) uploadResult.get("resource_type");
+            String resourceType = (String) uploadResult.get("resource_type"); // e.g., "image", "video", "raw"
+            String format = (String) uploadResult.get("format"); // e.g., "jpg", "pdf", "mp4"
             Number bytes = (Number) uploadResult.get("bytes");
 
-            log.info("File '{}' uploaded successfully to Cloudinary. URL: {}, Public ID: {}, Type: {}, Size: {} bytes",
-                    originalFilename, secureUrl, publicIdResult, resourceType, bytes);
+            if (secureUrl == null) {
+                log.error("Cloudinary upload for '{}' seemed successful but secure_url is missing. Result: {}", originalFilename, uploadResult);
+                throw new RuntimeException("Cloudinary upload failed: secure_url was not returned.");
+            }
 
-            // Return a map containing essential details for the frontend/backend
+            log.info("File '{}' uploaded successfully to Cloudinary. URL: {}, Public ID: {}, Type: {}, Format: {}, Size: {} bytes",
+                    originalFilename, secureUrl, publicIdResult, resourceType, format, bytes);
+
+            // Return a map containing essential details
             return Map.of(
                     "secure_url", secureUrl,
                     "public_id", publicIdResult,
                     "resource_type", resourceType,
-                    "bytes", bytes != null ? bytes.longValue() : 0L
+                    "original_filename", originalFilename, // Return the name used for upload
+                    "format", (format != null ? format : ""), // Return format if available
+                    "bytes", (bytes != null ? bytes.longValue() : 0L)
             );
 
         } catch (IOException e) {
@@ -60,7 +87,7 @@ public class CloudinaryService {
             throw e; // Re-throw IO exception
         } catch (Exception e) {
             // Catch other potential Cloudinary API errors
-            log.error("Cloudinary upload failed for file: {}", originalFilename, e);
+            log.error("Cloudinary upload failed for file: {}. Error: {}", originalFilename, e.getMessage(), e);
             // Wrap in a runtime exception or a custom exception
             throw new RuntimeException("Cloudinary upload failed: " + e.getMessage(), e);
         }
@@ -72,16 +99,21 @@ public class CloudinaryService {
             log.warn("Attempted to delete file with null or blank publicId.");
             return;
         }
-        log.info("Attempting to delete file from Cloudinary. Public ID: {}, Type: {}", publicId, resourceType);
+        // Default to "image" if resourceType is null/blank, but Cloudinary might need it specified for non-image types
+        String typeToDelete = (resourceType != null && !resourceType.isBlank()) ? resourceType : "image";
+
+        log.info("Attempting to delete file from Cloudinary. Public ID: {}, Resource Type: {}", publicId, typeToDelete);
         try {
-            // Specify resource_type if it's not image (e.g., "video", "raw")
-            Map<?,?> result = cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", resourceType));
+            // Specify resource_type especially if it's not image (e.g., "video", "raw")
+            // If type is unknown, Cloudinary might guess, but it's better to provide it.
+            Map<?,?> result = cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", typeToDelete));
             log.info("Cloudinary deletion result for {}: {}", publicId, result);
+            // You might want to check result.get("result") which should be "ok" or "not found"
         } catch (IOException e) {
-            log.error("Failed to delete file {} from Cloudinary", publicId, e);
+            log.error("I/O error deleting file {} ({}) from Cloudinary", publicId, typeToDelete, e);
             throw e;
         } catch (Exception e) {
-            log.error("Cloudinary deletion failed for public ID: {}", publicId, e);
+            log.error("Cloudinary API error deleting file {}: {}", publicId, e.getMessage(), e);
             throw new RuntimeException("Cloudinary deletion failed: " + e.getMessage(), e);
         }
     }

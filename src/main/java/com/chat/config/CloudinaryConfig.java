@@ -23,11 +23,18 @@ public class CloudinaryConfig {
 
     @Bean
     public Cloudinary cloudinary() {
+        // Input validation for credentials
+        if (cloudName == null || cloudName.isBlank() ||
+                apiKey == null || apiKey.isBlank() ||
+                apiSecret == null || apiSecret.isBlank()) {
+            throw new IllegalArgumentException("Cloudinary credentials (cloud_name, api_key, api_secret) must be set in application properties.");
+        }
+
         Map<String, String> config = new HashMap<>();
         config.put("cloud_name", cloudName);
         config.put("api_key", apiKey);
         config.put("api_secret", apiSecret);
-        // config.put("secure", "true"); // Optional: force https URLs
+        config.put("secure", "true"); // Force HTTPS URLs, recommended
         return new Cloudinary(config);
     }
 }
