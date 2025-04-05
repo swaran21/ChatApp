@@ -1,11 +1,11 @@
 package com.chat.controller;
 
-import com.chat.model.ChatModelCreation; // If needed for other methods
+import com.chat.model.ChatModelCreation;
 import com.chat.model.ChatMessage;
 import com.chat.model.ChatMessageDTO;
 import com.chat.repo.ChatMessageRepo;
-import com.chat.service.ChatService; // Inject ChatService
-import com.chat.service.UserService; // Inject if needed for user lookup/validation
+import com.chat.service.ChatService;
+import com.chat.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,26 +13,25 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate; // Crucial for broadcasting
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*; // Keep REST annotations
+import org.springframework.web.bind.annotation.*;
 
-import java.util.Base64; // Import Base64
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.stream.Collectors;
 
-@RestController // Keep if it also has REST endpoints
-// Or @Controller if it ONLY has WebSocket mappings now
-@RequestMapping("/api/chat") // Base path for REST endpoints (if any)
+@RestController
+@RequestMapping("/api/chat")
 public class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
 
     private final ChatService chatService;
-    private final UserService userService; // Inject if needed
-    private final ChatMessageRepo chatMessageRepository; // Inject Mongo Repo
-    private final SimpMessagingTemplate messagingTemplate; // Inject template
+    private final UserService userService;
+    private final ChatMessageRepo chatMessageRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Autowired
     public ChatController(ChatService chatService, UserService userService,
@@ -44,188 +43,175 @@ public class ChatController {
         this.messagingTemplate = messagingTemplate;
     }
 
-    // --- Existing REST Endpoints (Keep them as they are) ---
-
     @PostMapping("/create")
     public ResponseEntity<?> createChat(@RequestBody ChatModelCreation chatModelCreation, Authentication authentication) {
-        // ... (your existing create chat logic using authentication.getName() to find ownerId)
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(401).body(Map.of("message", "Authentication required."));
         }
         String username = authentication.getName();
-        Long ownerId = userService.getUserModelByUsername(username)
-                .orElseThrow(() -> new RuntimeException("Authenticated user not found"))
-                .getId();
-
         try {
+            Long ownerId = userService.getUserModelByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Authenticated user profile not found"))
+                    .getId();
             ChatModelCreation createdChat = chatService.createChat(chatModelCreation, ownerId);
             return ResponseEntity.ok(createdChat);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         } catch (RuntimeException e) {
-            return ResponseEntity.status(404).body(Map.of("message", e.getMessage())); // E.g., Receiver not found
+            log.warn("Failed to create chat for user {}: {}", username, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Unexpected error creating chat for user {}", username, e);
+            return ResponseEntity.status(500).body(Map.of("message", "An internal error occurred while creating the chat."));
         }
-        // ... other catches
     }
 
     @GetMapping("/list")
     public ResponseEntity<?> getChats(Authentication authentication) {
-        // ... (your existing get chats logic using authentication.getName() to find userId)
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(401).body(Map.of("message", "Authentication required."));
         }
         String username = authentication.getName();
-        Long userId = userService.getUserModelByUsername(username)
-                .orElseThrow(() -> new RuntimeException("Authenticated user not found"))
-                .getId();
-        List<ChatModelCreation> chats = chatService.getChatsForUser(userId);
-        return ResponseEntity.ok(chats);
+        try {
+            Long userId = userService.getUserModelByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Authenticated user profile not found"))
+                    .getId();
+            List<ChatModelCreation> chats = chatService.getChatsForUser(userId);
+            return ResponseEntity.ok(chats);
+        } catch (RuntimeException e) {
+            log.warn("Failed to list chats for user {}: {}", username, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Unexpected error listing chats for user {}", username, e);
+            return ResponseEntity.status(500).body(Map.of("message", "An internal error occurred while listing chats."));
+        }
     }
 
     @DeleteMapping("/delete")
     public ResponseEntity<?> deleteChat(@RequestParam Long chatId, Authentication authentication) {
-        // ... (your existing delete chat logic using authentication.getName() to find userId)
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(401).body(Map.of("message", "Authentication required."));
         }
         String username = authentication.getName();
-        Long userId = userService.getUserModelByUsername(username)
-                .orElseThrow(() -> new RuntimeException("Authenticated user not found"))
-                .getId();
-
         try {
+            Long userId = userService.getUserModelByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Authenticated user profile not found"))
+                    .getId();
             boolean deleted = chatService.deleteChatById(chatId, userId);
             if (deleted) {
-                // Consider deleting messages from MongoDB here too
-                // chatMessageRepository.deleteByChatId(chatId); // If you implement this method
+
                 return ResponseEntity.ok(Map.of("message", "Chat deleted successfully!"));
             } else {
-                // This path might not be reached if service throws exceptions
-                return ResponseEntity.status(404).body(Map.of("message", "Chat not found or deletion failed."));
+                return ResponseEntity.status(404).body(Map.of("message", "Chat not found or already deleted."));
             }
-        } catch (org.springframework.security.access.AccessDeniedException e) {
-            return ResponseEntity.status(403).body(Map.of("message", e.getMessage()));
+        } catch (AccessDeniedException e) {
+            log.warn("Auth Denied: User '{}' attempted to delete chat {} without permission.", username, chatId);
+            return ResponseEntity.status(403).body(Map.of("message", "You do not have permission to delete this chat."));
         } catch (RuntimeException e) {
-            return ResponseEntity.status(404).body(Map.of("message", e.getMessage())); // E.g., Chat not found
+            log.warn("Failed to delete chat {} for user {}: {}", chatId, username, e.getMessage());
+            return ResponseEntity.status(404).body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Unexpected error deleting chat {} for user {}", chatId, username, e);
+            return ResponseEntity.status(500).body(Map.of("message", "An internal error occurred while deleting the chat."));
         }
     }
 
     @GetMapping("/{chatId}")
     public ResponseEntity<?> getMessages(@PathVariable Long chatId, Authentication authentication) {
-        // --- Authorization Check: Ensure user is part of this chat ---
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(401).body(Map.of("message", "Authentication required."));
         }
         String username = authentication.getName();
-        if (!chatService.isUserInChat(username, chatId)) {
-            log.warn("User '{}' attempted to access messages for chat {} but is not a member.", username, chatId);
-            return ResponseEntity.status(403).body(Map.of("message", "You are not authorized to view messages for this chat."));
-        }
-        // --- End Authorization Check ---
+        try {
+            if (!chatService.isUserInChat(username, chatId)) {
+                log.warn("Auth Denied: User '{}' requesting messages for chat {} they are not in.", username, chatId);
+                return ResponseEntity.status(403).body(Map.of("message", "Not authorized for this chat."));
+            }
 
-        List<ChatMessage> messages = chatMessageRepository.findByChatIdOrderByTimestampAsc(chatId);
-        // Convert List<ChatMessage> to List<ChatMessageDTO>
-        List<ChatMessageDTO> messageDTOs = messages.stream()
-                .map(ChatMessageDTO::fromEntity)
-                .toList(); // Java 16+ shorthand
-        return ResponseEntity.ok(messageDTOs);
+            List<ChatMessage> messages = chatMessageRepository.findByChatIdOrderByTimestampAsc(chatId);
+            List<ChatMessageDTO> messageDTOs = messages.stream()
+                    .map(ChatMessageDTO::fromEntity) // Use the static factory method
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(messageDTOs);
+        } catch (RuntimeException e) {
+            log.warn("Failed to get messages for chat {} for user {}: {}", chatId, username, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Unexpected error getting messages for chat {} for user {}", chatId, username, e);
+            return ResponseEntity.status(500).body(Map.of("message", "An internal error occurred while fetching messages."));
+        }
     }
 
-
-    // --- WebSocket Message Handling Method (Consolidated) ---
-    @MessageMapping("/chat/{chatId}/send") // The single mapping for sending messages
-    // Method returns void because we manually send with SimpMessagingTemplate
+    @MessageMapping("/chat/{chatId}/send")
     public void handleAndBroadcastMessage(@DestinationVariable Long chatId,
-                                          @Payload ChatMessageDTO messageDTO, // Receives the DTO from client
-                                          Authentication authentication) { // Verify sender
+                                          @Payload ChatMessageDTO messageDTO,
+                                           Authentication authentication) {
 
         if (messageDTO == null || messageDTO.getType() == null || messageDTO.getSender() == null) {
-            log.warn("Received invalid message payload for chat {}: {}", chatId, messageDTO);
-            // Optionally send error back to sender?
+            log.warn("WS Request Invalid: Received null/incomplete message payload for chat {}: {}", chatId, messageDTO);
             return;
         }
 
-        // --- Security Check: Verify sender matches authenticated user ---
         String authenticatedUsername = authentication != null ? authentication.getName() : null;
-        if (authenticatedUsername == null || !authenticatedUsername.equals(messageDTO.getSender())) {
-            log.warn("Sender mismatch or unauthenticated user! Auth user: '{}', Payload sender: '{}' for chat {}",
+        if (authenticatedUsername == null) {
+            log.error("WS Request Denied: Unauthenticated user attempted to send message to chat {}", chatId);
+            return;
+        }
+        if (!authenticatedUsername.equals(messageDTO.getSender())) {
+            log.warn("WS Sender Mismatch: Auth user '{}' differs from payload sender '{}' for chat {}. Overwriting sender.",
                     authenticatedUsername, messageDTO.getSender(), chatId);
-            // Overwrite sender from authenticated principal if available
-            if (authenticatedUsername != null) {
-                log.debug("Overwriting sender in DTO for chat {} to authenticated user '{}'", chatId, authenticatedUsername);
-                messageDTO.setSender(authenticatedUsername);
-            } else {
-                log.error("Cannot process message for chat {}: User not authenticated.", chatId);
-                // Optionally send error message back to sender's session?
-                return; // Stop processing if user isn't authenticated
-            }
+            messageDTO.setSender(authenticatedUsername);
         }
-        // --- End Security Check ---
-
-        // --- Authorization Check: Ensure authenticated user is allowed in this chat ---
         if (!chatService.isUserInChat(authenticatedUsername, chatId)) {
-            log.warn("User '{}' attempted to send message to chat {} but is not a member.", authenticatedUsername, chatId);
-            // Optionally send error message back to sender's session?
-            return; // Stop processing
+            log.warn("WS Auth Denied: User '{}' attempted to send message to chat {} but is not a member.", authenticatedUsername, chatId);
+            return;
         }
-        // --- End Authorization Check ---
 
+        ChatMessage messageEntity = null;
+        log.debug("WS Processing: Chat={}, Type='{}', Sender='{}'", chatId, messageDTO.getType(), messageDTO.getSender());
 
-        ChatMessage messageEntity;
-        log.debug("Processing message DTO for chat {}: Type='{}', Sender='{}'", chatId, messageDTO.getType(), messageDTO.getSender());
-
-        // Create the correct ChatMessage entity based on type from DTO
         try {
             switch (messageDTO.getType()) {
                 case "TEXT":
-                    messageEntity = new ChatMessage(chatId, messageDTO.getSender(), messageDTO.getContent(), "TEXT");
-                    break;
-                case "VOICE":
-                    byte[] audioData = null;
-                    if (messageDTO.getContent() != null) {
-                        audioData = Base64.getDecoder().decode(messageDTO.getContent());
-                    } else {
-                        log.warn("Received VOICE message for chat {} with null content.", chatId);
-                        // Decide how to handle: error message or empty audio?
-                        messageEntity = new ChatMessage(chatId, messageDTO.getSender(), "[Empty voice message]", "TEXT"); // Example: Save as text error
-                        break;
+                    if (messageDTO.getContent() == null || messageDTO.getContent().trim().isEmpty()) {
+                        log.warn("WS Skipping empty TEXT message for chat {}", chatId); return;
                     }
-                    messageEntity = new ChatMessage(chatId, messageDTO.getSender(), audioData, messageDTO.getAudioMimeType(), "VOICE");
-                    // messageEntity.setContent(null); // Optionally clear base64 content if only storing bytes
+                    messageEntity = new ChatMessage(chatId, messageDTO.getSender(), messageDTO.getContent(), "TEXT");
                     break;
                 case "FILE_URL":
                     if (messageDTO.getContent() == null || messageDTO.getFileName() == null || messageDTO.getFileType() == null) {
-                        log.error("Received FILE_URL message for chat {} with missing data: URL='{}', Name='{}', Type='{}'", chatId, messageDTO.getContent(), messageDTO.getFileName(), messageDTO.getFileType());
-                        messageEntity = new ChatMessage(chatId, messageDTO.getSender(), "[Failed to process file message - missing data]", "TEXT"); // Example: Save as text error
-                        break;
+                        log.error("WS Invalid FILE_URL: Received FILE_URL message for chat {} with missing data: URL='{}', Name='{}', Type='{}'", chatId, messageDTO.getContent(), messageDTO.getFileName(), messageDTO.getFileType());
+                        return; // Don't save invalid file messages
                     }
+                    try { new java.net.URL(messageDTO.getContent()).toURI(); }
+                    catch (Exception e) { log.error("WS Invalid FILE_URL: Content is not a valid URL: {}", messageDTO.getContent()); return; }
+
                     messageEntity = new ChatMessage(chatId, messageDTO.getSender(), messageDTO.getContent(), messageDTO.getFileName(), messageDTO.getFileType(), "FILE_URL");
                     break;
                 default:
-                    log.warn("Received message with unknown type '{}' for chat {}", messageDTO.getType(), chatId);
-                    messageEntity = new ChatMessage(chatId, messageDTO.getSender(), "[Unsupported message type: " + messageDTO.getType() + "]", "TEXT");
-                    break;
+                    log.warn("WS Unknown Type: Received message with unknown type '{}' for chat {}", messageDTO.getType(), chatId);
+                    return;
             }
         } catch (IllegalArgumentException e) {
-            log.error("Error processing message content for chat {} (e.g., invalid Base64): {}", chatId, e.getMessage());
-            messageEntity = new ChatMessage(chatId, messageDTO.getSender(), "[Error processing message content]", "TEXT");
-            // You might want to notify the sender here as well
+            log.error("WS Processing Error: Failed to process content for message type {} in chat {} (e.g., invalid Base64): {}", messageDTO.getType(), chatId, e.getMessage());
+            return;
+        } catch (Exception e) {
+            log.error("WS Processing Error: Unexpected error processing message type {} in chat {}: {}", messageDTO.getType(), chatId, e.getMessage(), e);
+            return;
         }
 
-        // Save the message entity to MongoDB
+        // Save and Broadcast if entity was successfully created
         ChatMessage savedMessage = chatMessageRepository.save(messageEntity);
-        log.info("Saved message ID {} (Type: {}) for chat {}", savedMessage.getId(), savedMessage.getType(), chatId);
+        log.info("DB Saved: Message ID {} (Type: {}) for chat {}", savedMessage.getId(), savedMessage.getType(), chatId);
 
-        // Convert the *saved* entity back to DTO (to include ID, timestamp, and correct fields)
+        // Convert the *saved* entity back to DTO (uses the fixed fromEntity method)
         ChatMessageDTO broadcastDTO = ChatMessageDTO.fromEntity(savedMessage);
 
-        // Broadcast the DTO to all subscribers of the chat topic
+        if (broadcastDTO == null) {
+            log.error("WS Broadcast Error: Failed to convert saved entity (ID: {}) back to DTO for chat {}", savedMessage.getId(), chatId);
+            return;
+        }
+
         String destination = "/topic/chat/" + chatId;
         messagingTemplate.convertAndSend(destination, broadcastDTO);
-        log.debug("Broadcasted message DTO to {}: {}", destination, broadcastDTO);
-
-        // Note: No return value needed here as we used messagingTemplate.convertAndSend
-        // If you used @SendTo annotation on the method, you would return broadcastDTO here.
+        log.debug("WS Broadcast: Sent DTO to {} for chat {}", destination, chatId);
     }
-
 }

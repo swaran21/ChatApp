@@ -31,13 +31,10 @@ public class UserService implements UserDetailsService {
         UserModel userModel = userRepo.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with username: " + username));
 
-        // Convert your UserModel to Spring Security's UserDetails
-        // For simplicity, granting a basic "USER" role. You can make roles more complex later.
         return new User(
                 userModel.getUsername(),
-                userModel.getPassword(), // Password MUST be encoded in the database
-                new ArrayList<>() // List of GrantedAuthority (e.g., Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER")))
-                // You can add authorities/roles based on userModel fields if needed
+                userModel.getPassword(),
+                new ArrayList<>()
         );
     }
 
@@ -53,12 +50,9 @@ public class UserService implements UserDetailsService {
     }
 
     public Optional<UserModel> getUserModelByUsername(String username) {
+
         return userRepo.findByUsername(username);
     }
-//    public Optional<UserModel> loginUser(String username, String password) {
-//        Optional<UserModel> user = userRepo.findByUsername(username);
-//        return user.filter(u -> passwordEncoder.matches(password, u.getPassword()));
-//    }
 
 
 }

@@ -1,4 +1,3 @@
-// src/main/java/com/chat/service/CloudinaryService.java
 package com.chat.service;
 
 import com.cloudinary.Cloudinary;
@@ -11,7 +10,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.Map;
-// import java.util.UUID; // Keep if you plan to use custom public IDs
 
 @Service
 public class CloudinaryService {
@@ -21,15 +19,6 @@ public class CloudinaryService {
     @Autowired
     private Cloudinary cloudinary;
 
-    /**
-     * Uploads a file to Cloudinary.
-     *
-     * @param file The file to upload.
-     * @param originalFilename The original name of the file (used for metadata and potentially display).
-     * @return A map containing upload details like secure_url, public_id, resource_type, bytes, and original_filename.
-     * @throws IOException If reading file bytes fails.
-     * @throws RuntimeException If the Cloudinary upload itself fails.
-     */
     public Map<String, Object> uploadFile(MultipartFile file, String originalFilename) throws IOException {
         log.info("Attempting to upload file '{}' to Cloudinary.", originalFilename);
 
@@ -38,7 +27,7 @@ public class CloudinaryService {
         }
         if (originalFilename == null || originalFilename.isBlank()) {
             log.warn("Original filename is missing, using default 'upload'.");
-            originalFilename = "upload"; // Provide a default if missing
+            originalFilename = "upload";
         }
 
         try {
@@ -50,18 +39,16 @@ public class CloudinaryService {
             // folder: "chat_uploads" -> Organize uploads in Cloudinary (optional but recommended)
             Map<?, ?> uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
                     "resource_type", "auto",
-                    "original_filename", originalFilename, // Store original filename metadata
-                    "use_filename", true,          // Attempt to use original filename for public ID
-                    "unique_filename", false,       // Don't add random chars if use_filename works
-                    "folder", "chat_uploads"      // Optional: Organize in a folder
-                    // "overwrite", true             // Optional: Overwrite if file with same public_id exists
+                    "original_filename", originalFilename,
+                    "use_filename", true,
+                    "unique_filename", false,
+                    "folder", "chat_uploads"
             ));
 
-            // Extract useful information from the result
-            String secureUrl = (String) uploadResult.get("secure_url"); // HTTPS URL (recommended)
+            String secureUrl = (String) uploadResult.get("secure_url");
             String publicIdResult = (String) uploadResult.get("public_id");
-            String resourceType = (String) uploadResult.get("resource_type"); // e.g., "image", "video", "raw"
-            String format = (String) uploadResult.get("format"); // e.g., "jpg", "pdf", "mp4"
+            String resourceType = (String) uploadResult.get("resource_type");
+            String format = (String) uploadResult.get("format");
             Number bytes = (Number) uploadResult.get("bytes");
 
             if (secureUrl == null) {
@@ -72,43 +59,35 @@ public class CloudinaryService {
             log.info("File '{}' uploaded successfully to Cloudinary. URL: {}, Public ID: {}, Type: {}, Format: {}, Size: {} bytes",
                     originalFilename, secureUrl, publicIdResult, resourceType, format, bytes);
 
-            // Return a map containing essential details
             return Map.of(
                     "secure_url", secureUrl,
                     "public_id", publicIdResult,
                     "resource_type", resourceType,
-                    "original_filename", originalFilename, // Return the name used for upload
-                    "format", (format != null ? format : ""), // Return format if available
+                    "original_filename", originalFilename,
+                    "format", (format != null ? format : ""),
                     "bytes", (bytes != null ? bytes.longValue() : 0L)
             );
 
         } catch (IOException e) {
             log.error("Failed to read file bytes for Cloudinary upload: {}", originalFilename, e);
-            throw e; // Re-throw IO exception
+            throw e;
         } catch (Exception e) {
-            // Catch other potential Cloudinary API errors
             log.error("Cloudinary upload failed for file: {}. Error: {}", originalFilename, e.getMessage(), e);
-            // Wrap in a runtime exception or a custom exception
             throw new RuntimeException("Cloudinary upload failed: " + e.getMessage(), e);
         }
     }
 
-    // Optional: Method to delete from Cloudinary using public_id
     public void deleteFile(String publicId, String resourceType) throws IOException {
         if (publicId == null || publicId.isBlank()) {
             log.warn("Attempted to delete file with null or blank publicId.");
             return;
         }
-        // Default to "image" if resourceType is null/blank, but Cloudinary might need it specified for non-image types
         String typeToDelete = (resourceType != null && !resourceType.isBlank()) ? resourceType : "image";
 
         log.info("Attempting to delete file from Cloudinary. Public ID: {}, Resource Type: {}", publicId, typeToDelete);
         try {
-            // Specify resource_type especially if it's not image (e.g., "video", "raw")
-            // If type is unknown, Cloudinary might guess, but it's better to provide it.
             Map<?,?> result = cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", typeToDelete));
             log.info("Cloudinary deletion result for {}: {}", publicId, result);
-            // You might want to check result.get("result") which should be "ok" or "not found"
         } catch (IOException e) {
             log.error("I/O error deleting file {} ({}) from Cloudinary", publicId, typeToDelete, e);
             throw e;

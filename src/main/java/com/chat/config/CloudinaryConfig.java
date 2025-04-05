@@ -1,4 +1,3 @@
-// src/main/java/com/chat/config/CloudinaryConfig.java
 package com.chat.config;
 
 import com.cloudinary.Cloudinary;
@@ -23,7 +22,6 @@ public class CloudinaryConfig {
 
     @Bean
     public Cloudinary cloudinary() {
-        // Input validation for credentials
         if (cloudName == null || cloudName.isBlank() ||
                 apiKey == null || apiKey.isBlank() ||
                 apiSecret == null || apiSecret.isBlank()) {

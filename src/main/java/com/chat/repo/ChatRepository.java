@@ -10,4 +10,6 @@ public interface ChatRepository extends JpaRepository<ChatModelCreation, Long> {
     List<ChatModelCreation> findByOwnerIdOrReceiverId(Long ownerId, Long receiverId);
     Optional<ChatModelCreation> findByChatId(Long chatId);
     void deleteByChatId(Long chatId);
+
+    Optional<ChatModelCreation> findByOwnerIdAndReceiverId(Long ownerId, Long receiverId);
 }

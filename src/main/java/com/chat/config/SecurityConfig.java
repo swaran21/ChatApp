@@ -28,11 +28,9 @@ public class SecurityConfig {
     @Autowired
     private UserService userService;
 
-    // Inject the PasswordEncoder bean defined in AppConfig (or similar)
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
 
-    // AuthenticationManager Bean using the injected dependencies
     @Bean
     public AuthenticationManager authenticationManager(HttpSecurity http) throws Exception {
         AuthenticationManagerBuilder authenticationManagerBuilder =
@@ -45,60 +43,57 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // 1. CORS Configuration
+                //CORS Configuration
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                // 2. CSRF Configuration (Disabled - Reconsider for Production)
+                //CSRF Configuration (Disabled - Reconsider for Production)
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // 3. Exception Handling (Return 401 for unauthenticated REST)
+                //Exception Handling (Return 401 for unauthenticated REST)
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
                 )
 
-                // 4. Session Management
+                //Session Management
                 .sessionManagement(session -> session
                         .sessionFixation().migrateSession()
                 )
 
-                // 5. Authorization Rules (Order Matters!)
+                //Authorization Rules (Order Matters!)
                 .authorizeHttpRequests(auth -> auth
-                        // --- Public Endpoints ---
-                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/session").permitAll() // Auth operations
-                        .requestMatchers("/ws-chat/**").permitAll() // WebSocket handshake
+                        //Public Endpoints
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/session").permitAll() 
+                        .requestMatchers("/ws-chat/**").permitAll()
 
-                        // --- Secured API Endpoints ---
-                        .requestMatchers("/api/chat/**").authenticated() // All chat operations (create, list, delete, get messages)
-                        .requestMatchers("/api/files/upload").authenticated() // Cloudinary file upload endpoint
+                        //Secured API Endpoints
+                        .requestMatchers("/api/chat/**").authenticated() 
+                        .requestMatchers("/api/files/upload").authenticated()
 
-                        // --- Default Rule ---
-                        .anyRequest().authenticated() // Secure everything else by default
+                        .anyRequest().authenticated()
                 )
 
-                // 6. Logout Configuration
+                //Logout Configuration
                 .logout(logout -> logout
-                        .logoutUrl("/api/auth/logout") // Define logout URL
+                        .logoutUrl("/api/auth/logout")
                         .invalidateHttpSession(true)
                         .deleteCookies("JSESSIONID")
                         .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler(HttpStatus.OK))
-                        .permitAll() // Allow access to the logout URL itself
+                        .permitAll()
                 );
 
         return http.build();
     }
 
-    // CORS Configuration Bean
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Adjust origin to your specific React app URL in production
         configuration.setAllowedOrigins(List.of("http://localhost:5173"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(List.of("*")); // Consider restricting headers in production if needed
-        configuration.setAllowCredentials(true); // Essential for cookies/session auth
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration); // Apply this CORS config to all paths
+        source.registerCorsConfiguration("/**", configuration);
         return source;
     }
 }

@@ -1,4 +1,3 @@
-// src/main/java/com/chat/config/AppConfig.java
 package com.chat.config;
 
 import org.springframework.context.annotation.Bean;

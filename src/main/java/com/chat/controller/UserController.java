@@ -27,10 +27,8 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
-// CORS handled globally by SecurityConfig
 public class UserController {
 
-    // Define a logger for the class
     private static final Logger log = LoggerFactory.getLogger(UserController.class);
 
     private final UserService userService;
@@ -43,13 +41,11 @@ public class UserController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest registerRequest) { // Use dedicated DTO
-        // Input validation
+    public ResponseEntity<?> register(@RequestBody RegisterRequest registerRequest) {
         if (registerRequest.getUsername() == null || registerRequest.getPassword() == null ||
                 registerRequest.getUsername().isBlank() || registerRequest.getPassword().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Username and password cannot be empty."));
         }
-        // Add more validation (length, characters etc.) if needed
 
         try {
             boolean isRegistered = userService.registerUser(registerRequest.getUsername(), registerRequest.getPassword());
@@ -57,12 +53,10 @@ public class UserController {
                 log.info("User registered successfully: {}", registerRequest.getUsername());
                 return ResponseEntity.ok(Map.of("message", "User registered successfully!"));
             } else {
-                // This path might not be reachable if service throws exception for existing user
                 log.warn("Registration attempt failed for existing username: {}", registerRequest.getUsername());
                 return ResponseEntity.status(409).body(Map.of("message", "Username already exists!"));
             }
         } catch (Exception e) {
-            // Catch potential exceptions from service layer during registration
             log.error("Error during registration for user {}: {}", registerRequest.getUsername(), e.getMessage());
             return ResponseEntity.status(500).body(Map.of("message", "Registration failed due to a server error."));
         }
@@ -81,17 +75,13 @@ public class UserController {
             UsernamePasswordAuthenticationToken token =
                     new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword());
 
-            // Authenticate user - throws AuthenticationException on failure
             Authentication authentication = authenticationManager.authenticate(token);
 
-            // Authentication successful, establish session context
-            SecurityContext context = SecurityContextHolder.createEmptyContext(); // Create fresh context
-            context.setAuthentication(authentication); // Set authentication in context
-            SecurityContextHolder.setContext(context); // Set context for current thread
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authentication);
+            SecurityContextHolder.setContext(context);
 
-            // Explicitly save context to session
-            HttpSession session = request.getSession(true); // true = create if not exists
-            // Use the standard key Spring Security expects for session persistence
+            HttpSession session = request.getSession(true);
             session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
 
             UserDetails userDetails = (UserDetails) authentication.getPrincipal();
@@ -102,24 +92,20 @@ public class UserController {
                     "username", userDetails.getUsername()
             ));
 
-        } catch (BadCredentialsException e) { // Catch specific exception
+        } catch (BadCredentialsException e) {
             log.warn("Authentication failed for user '{}': Invalid credentials", loginRequest.getUsername());
-            SecurityContextHolder.clearContext(); // Ensure context is cleared on failure
+            SecurityContextHolder.clearContext();
             return ResponseEntity.status(401).body(Map.of("message", "Invalid username or password!"));
-        } catch (AuthenticationException e) { // Catch other authentication errors
+        } catch (AuthenticationException e) {
             log.warn("Authentication failed for user '{}': {}", loginRequest.getUsername(), e.getMessage(), e);
             SecurityContextHolder.clearContext();
             return ResponseEntity.status(401).body(Map.of("message", "Authentication failed: " + e.getMessage()));
-        } catch (Exception e) { // Catch unexpected errors during login
+        } catch (Exception e) {
             log.error("Unexpected error during login for user '{}'", loginRequest.getUsername(), e);
             SecurityContextHolder.clearContext();
             return ResponseEntity.status(500).body(Map.of("message", "Login failed due to a server error."));
         }
     }
-
-
-    // Logout is handled by SecurityConfig logout filter, no controller method needed.
-
 
     @GetMapping("/session")
     public ResponseEntity<?> checkSession(Authentication authentication) {
@@ -136,15 +122,11 @@ public class UserController {
     }
 }
 
-// --- Data Transfer Objects (DTOs) ---
-// Place these in a separate package like com.chat.dto if preferred
-
 @Getter
 @Setter
 class LoginRequest {
     private String username;
     private String password;
-    // Lombok generates getters/setters
 }
 
 @Getter
@@ -152,5 +134,4 @@ class LoginRequest {
 class RegisterRequest {
     private String username;
     private String password;
-    // Lombok generates getters/setters
 }
