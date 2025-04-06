@@ -2,14 +2,18 @@ package com.chat.config;
 
 import com.chat.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders; // Import HttpHeaders
+import org.springframework.http.HttpMethod; // Import HttpMethod
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy; // Import SessionCreationPolicy
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
@@ -31,6 +35,10 @@ public class SecurityConfig {
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
 
+    // Correct place for FRONTEND_URL injection
+    @Value("${frontend.url}")
+    private String frontendUrl;
+
     @Bean
     public AuthenticationManager authenticationManager(HttpSecurity http) throws Exception {
         AuthenticationManagerBuilder authenticationManagerBuilder =
@@ -43,57 +51,77 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                //CORS Configuration
+                // Use the CORS configuration defined below
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                //CSRF Configuration (Disabled - Reconsider for Production)
+                // Keep CSRF disabled for now, but review if needed for session auth
                 .csrf(AbstractHttpConfigurer::disable)
 
-                //Exception Handling (Return 401 for unauthenticated REST)
                 .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) // Return 401 if auth needed
                 )
 
-                //Session Management
+                // Ensure sessions are managed appropriately (needed for JSESSIONID)
+                // Use IF_REQUIRED which is typical for REST APIs with sessions.
                 .sessionManagement(session -> session
-                        .sessionFixation().migrateSession()
+                        //.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED) // Default usually okay, explicitly set if needed
+                        .sessionFixation().migrateSession() // Good practice for security
                 )
 
-                //Authorization Rules (Order Matters!)
                 .authorizeHttpRequests(auth -> auth
-                        //Public Endpoints
-                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/session").permitAll() 
-                        .requestMatchers("/ws-chat/**").permitAll()
+                        // Public endpoints: login, register, session check, WS handshake
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/session").permitAll()
+                        .requestMatchers("/ws-chat/**").permitAll() // Permit WebSocket handshake/upgrades
 
-                        //Secured API Endpoints
-                        .requestMatchers("/api/chat/**").authenticated() 
-                        .requestMatchers("/api/files/upload").authenticated()
-
-                        .anyRequest().authenticated()
+                        // Secured endpoints: everything else requiring authentication
+                        .requestMatchers("/api/chat/**", "/api/files/**").authenticated() // Simplified files path
+                        .anyRequest().authenticated() // Default deny any other request unless authenticated
                 )
 
-                //Logout Configuration
                 .logout(logout -> logout
                         .logoutUrl("/api/auth/logout")
                         .invalidateHttpSession(true)
-                        .deleteCookies("JSESSIONID")
+                        .deleteCookies("JSESSIONID") // Explicitly delete cookie
                         .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler(HttpStatus.OK))
-                        .permitAll()
+                        .permitAll() // Allow anyone to hit the logout URL
                 );
 
         return http.build();
     }
 
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true);
+
+        if (frontendUrl == null || frontendUrl.isBlank()) {
+            throw new IllegalStateException("Frontend URL ('frontend.url') is not configured in application properties/env.");
+        }
+        System.out.println("--- Configuring CORS for origin: " + frontendUrl + " ---"); // Log the configured URL
+
+        configuration.setAllowedOrigins(List.of(frontendUrl)); // Allow specific frontend origin
+        configuration.setAllowedMethods(Arrays.asList(
+                HttpMethod.GET.name(),
+                HttpMethod.POST.name(),
+                HttpMethod.PUT.name(),
+                HttpMethod.DELETE.name(),
+                HttpMethod.PATCH.name(),
+                HttpMethod.OPTIONS.name() // Crucial for preflight requests
+        ));
+        configuration.setAllowedHeaders(Arrays.asList( // Be more explicit than "*"
+                HttpHeaders.AUTHORIZATION,
+                HttpHeaders.CONTENT_TYPE,
+                HttpHeaders.ACCEPT,
+                "X-Requested-With", // Common header for AJAX
+                "remember-me"       // Example header
+                // Add any other custom headers your frontend might send
+        ));
+        configuration.setExposedHeaders(Arrays.asList(HttpHeaders.SET_COOKIE)); // Important if headers need reading by frontend
+        configuration.setAllowCredentials(true); // Essential for cookies/sessions
+        configuration.setMaxAge(3600L); // Cache preflight response for 1 hour
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
+        source.registerCorsConfiguration("/**", configuration); // Apply this config to all paths
         return source;
     }
 }
