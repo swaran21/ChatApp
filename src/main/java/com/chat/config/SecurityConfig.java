@@ -70,7 +70,7 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints: login, register, session check, WS handshake
-                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/session").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/session","/api/health").permitAll()
                         .requestMatchers("/ws-chat/**").permitAll() // Permit WebSocket handshake/upgrades
 
                         // Secured endpoints: everything else requiring authentication
