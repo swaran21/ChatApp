@@ -72,7 +72,7 @@ public class SecurityConfig {
                         // Public endpoints: login, register, session check, WS handshake
                         .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/session","/api/health").permitAll()
                         .requestMatchers("/ws-chat/**").permitAll() // Permit WebSocket handshake/upgrades
-
+                        .requestMatchers("/actuator/health/**").permitAll()
                         // Secured endpoints: everything else requiring authentication
                         .requestMatchers("/api/chat/**", "/api/files/**").authenticated() // Simplified files path
                         .anyRequest().authenticated() // Default deny any other request unless authenticated
