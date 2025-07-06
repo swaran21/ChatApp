@@ -5,6 +5,7 @@ import com.chat.model.ChatMessage;
 import com.chat.model.ChatMessageDTO;
 import com.chat.repo.ChatMessageRepo;
 import com.chat.service.ChatService;
+import com.chat.service.GeminiService;
 import com.chat.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,15 +33,17 @@ public class ChatController {
     private final UserService userService;
     private final ChatMessageRepo chatMessageRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final GeminiService geminiService;
 
     @Autowired
     public ChatController(ChatService chatService, UserService userService,
                           ChatMessageRepo chatMessageRepository,
-                          SimpMessagingTemplate messagingTemplate) {
+                          SimpMessagingTemplate messagingTemplate, GeminiService geminiService) {
         this.chatService = chatService;
         this.userService = userService;
         this.chatMessageRepository = chatMessageRepository;
         this.messagingTemplate = messagingTemplate;
+        this.geminiService = geminiService;
     }
 
     @PostMapping("/create")
@@ -213,5 +216,11 @@ public class ChatController {
         String destination = "/topic/chat/" + chatId;
         messagingTemplate.convertAndSend(destination, broadcastDTO);
         log.debug("WS Broadcast: Sent DTO to {} for chat {}", destination, chatId);
+
+        if (chatService.isAiChat(chatId) && "TEXT".equals(savedMessage.getType())) {
+            geminiService.generateResponseAndBroadcast(chatId, savedMessage.getContent());
+        }
+
     }
+
 }

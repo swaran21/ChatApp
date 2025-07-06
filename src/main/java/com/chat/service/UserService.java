@@ -1,8 +1,11 @@
 package com.chat.service;
 
+import com.chat.model.ChatModelCreation;
 import com.chat.model.UserModel;
+import com.chat.repo.ChatRepository;
 import com.chat.repo.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.User; // Import Spring Security User
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -20,10 +23,16 @@ public class UserService implements UserDetailsService {
 
     private final BCryptPasswordEncoder passwordEncoder;
 
+    private final ChatRepository chatRepository;
+
+    @Value("${ai.user.id}")
+    private Long aiUserId;
+
     @Autowired
-    public UserService(UserRepo userRepo, BCryptPasswordEncoder passwordEncoder) {
+    public UserService(UserRepo userRepo, BCryptPasswordEncoder passwordEncoder, ChatRepository chatRepository) {
         this.userRepo = userRepo;
         this.passwordEncoder = passwordEncoder;
+        this.chatRepository = chatRepository;
     }
 
     @Override
@@ -45,7 +54,8 @@ public class UserService implements UserDetailsService {
         UserModel user = new UserModel();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(password));
-        userRepo.save(user);
+        UserModel savedUser = userRepo.save(user);
+        createInitialAiChat(savedUser.getId());
         return true;
     }
 
@@ -54,5 +64,16 @@ public class UserService implements UserDetailsService {
         return userRepo.findByUsername(username);
     }
 
+    private void createInitialAiChat(Long newUserId) {
+        // Check if the AI user exists
+        if (userRepo.existsById(aiUserId)) {
+            ChatModelCreation aiChat = new ChatModelCreation();
+            aiChat.setChatName("Gemini AI");
+            aiChat.setOwnerId(newUserId);
+            aiChat.setReceiverId(aiUserId);
+            aiChat.setReceiverName("GeminiAI"); // The AI's username
+            chatRepository.save(aiChat);
+        }
 
+    }
 }

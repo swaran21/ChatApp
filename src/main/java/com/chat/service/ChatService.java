@@ -7,6 +7,7 @@ import com.chat.repo.ChatRepository;
 import com.chat.repo.UserRepo;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException; // Import
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,9 @@ public class ChatService {
     private final ChatRepository chatRepository;
     private final UserRepo userRepo;
     private final ChatMessageRepo chatMessageRepo;
+
+    @Value("${ai.user.id}")
+    private Long aiUserId;
 
     @Autowired
     public ChatService(ChatRepository chatRepository, UserRepo userRepo, ChatMessageRepo chatMessageRepo) {
@@ -100,4 +104,12 @@ public class ChatService {
         ChatModelCreation chat = chatOpt.get();
         return chat.getOwnerId().equals(userId) || chat.getReceiverId().equals(userId);
     }
+
+    public boolean isAiChat(Long chatId) {
+        if (chatId == null || aiUserId == null) return false;
+        return chatRepository.findById(chatId)
+                .map(chat -> chat.getOwnerId().equals(aiUserId) || chat.getReceiverId().equals(aiUserId))
+                .orElse(false);
+    }
+
 }
